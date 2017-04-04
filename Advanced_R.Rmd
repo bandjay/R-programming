@@ -1,0 +1,59 @@
+---
+title: "Advanced_R"
+output: html_document
+---
+
+
+### Functional programming
+##### With functional programming you can also consider the possibility that you can provide a function as an argument to another function,and a function can return another function as its result
+##### There are groups of functions that are essential for functional programming.In most cases they take a function and a data structure as arguments, and that function is applied to that data structure in some way. The purrr library contains many of these functions and we'll be using it throughout this section.Function programming is concerned mostly with lists and vectors
+```{r}
+library(purrr)
+```
+#### MAP
+#### The map family of functions applies a function to the elements of a data structure, usually a list or a vector. The function is evaluated once for each element of the vector with the vector element as the first argument to the function. The return value is the same kind if data structure (a list or vector) but with every element replaced by the result of the function being evaluated with the corresponding element as the argument to the function.
+#### In the case of map_if(): if the predicate functions evaluates to TRUE,then the function is applied to the corresponding vector element, however if the predicate function evaluates to FALSE then the function is not applied
+#### The pmap() family of functions is similar to map2(), however instead of mapping across two vectors or lists, you can map across any number of lists. The list argument is a list of lists that the function will map over, followed by the function that will applied
+#### Mapping is a powerful technique for thinking about how to apply computational operations to your data.
+```{r}
+lis<-c(1,2,3,4)
+lis2<-c(1,2,3,4)
+lis3<-c(1,2,3,4)
+unlist(map(lis,function(x) x^2))
+map_chr(lis, function(x) c("one","four","three","two")[x])
+map_lgl(lis, function(x) x>3)
+unlist(map_if(lis, function(x) x>2 ,function(y) y^2))
+unlist(pmap(list(lis,lis2,lis3),function(x,y,z) x^2+y^2+z^2))
+```
+
+#### REDUCE
+#### List or vector reduction iteratively combines the first element of a vector with the second element of a vector, then that combined result is combined with the third element of the vector, and so on until the end of the vector is reached. The function to be applied should take at least two arguments.Where mapping returns a vector or a list, reducing should return a single value.
+#### In contrast the reduce_right() function starts with the last element of a vector and then proceeds to the second to last element of a vector and so on
+```{r}
+reduce(lis, function(x,y) x+y)
+reduce_right(lis ,function(x,y) { 
+  message(x) 
+  message (y) 
+  x+y })
+```
+
+#### You can search for specific elements of a vector using the contains() and detect() functions. contains() will return TRUE if a specified element is present in a vector, otherwise it returns FALSE
+#### The detect() function takes a vector and a predicate function as arguments and it returns the first element of the vector for which the predicate function returns TRUE
+#### The group of functions that includes keep(), discard(), every(), and some() are known as filter functions. Each of these functions takes a vector and a predicate function
+```{r}
+lis<-seq(1,100)
+keep(lis, function(x) x%%2==0)
+```
+#### Finally, the compose() function combines any number of functions into one function
+```{r}
+n_unique <- compose(sum,function(x) x^2)
+# The composition above is the same as:
+# n_unique <- function(x){
+# length(unique(x))
+# }
+n_unique(seq(1,10))
+```
+#### Partial application of functions can allow functions to behave a little like data structures. Using the partial() function from the purrr package you can specify some of the arguments of a function, and then partial() will return a function that only takes the unspecified arguments
+#### If you want to evaluate a function across a data structure you should use the walk() function from purrr
+
+
