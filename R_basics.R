@@ -4,6 +4,7 @@
 library(tidyr)
 library(dplyr)
 data(VADeaths)
+getwd()
 VADeaths=VADeaths %>%
   tbl_df() %>%
   mutate(age = row.names(VADeaths)) %>%
@@ -108,4 +109,24 @@ tapply(x, y, sum)
 ### Faster R packages
 library(data.table)
 dt<-fread("C:/Users/jaycb/Desktop/NYtimes/full_data.csv",select = c("date"),nrows = 5)
+
+### Functional Programming
+library(purrr)
+
+lis<-c(1,2,3,4)
+lis2<-c(1,2,3,4)
+lis3<-c(1,2,3,4)
+unlist(map(lis,function(x) x^2))
+map_chr(lis, function(x) c("one","four","three","two")[x])
+map_lgl(lis, function(x) x>3)
+unlist(map_if(lis, function(x) x>2 ,function(y) y^2))
+unlist(pmap(list(lis,lis2,lis3),function(x,y,z) x^2+y^2+z^2))
+
+reduce(lis, function(x,y) x+y)
+reduce_right(lis ,function(x,y) { 
+  message(x) 
+  message (y) 
+  x+y })
+
+
 

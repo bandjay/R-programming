@@ -1,0 +1,624 @@
+---
+title: "Exam III - Basics of Statistical Learning"
+author: 'JayaChandu Bandlamudi: 667868837 , Thulasi Ram Khamma: 664689328'
+date: 'Due: Tuesday, May 10 by 11:00 PM'
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    theme: readable
+    toc: yes
+    toc_float: yes
+  word_document:
+    toc: yes
+header-includes: \usepackage{amsmath}
+Team size: '2'
+Leaderboard Submission name: Bridge
+---
+
+
+\
+\
+\
+
+
+<style type="text/css">
+
+span.bold-red1 {
+    color: red;
+    font-size: 500%;
+    font-weight: bold;
+}
+
+span.bold-red2 {
+    color: red;
+    font-size: 250%;
+    font-weight: bold;
+}
+
+</style>
+
+
+\
+\
+\
+
+For this exam you will be given two "classification" tasks on the same data. For both you will be given a training set, validation set, and a test set that only contains the predictors. You will create predictions on the test set and submit them to an auto-grader where you will receive feedback and a ranking among the class. (The ranking is only for fun.)
+
+
+
+
+
+# Data
+
+The data for this exam is originally from the UCI Machine Learning Repository. It has been modified for our purposes. (Any attempt to use the original data will be a waste of time. Your results must be justified via the given training data.) Take a look at the documentation to get an understanding of the feature variables. Their names in our data are slightly different, but the names are descriptive enough to match them.
+
+http://archive.ics.uci.edu/ml/datasets/Spambase
+
+Our data will store the spam status of an email (response) in a variables named `type`. This will be a factor variable with two levels: `spam` and `nonspam`.
+
+# Libraries
+
+```{r, message=FALSE, warning=FALSE}
+#install.packages("devtools")
+library(devtools)
+#devtools::install_github("coatless/balamuta")
+library(balamuta)
+library(caret)
+library(randomForest)
+library(kernlab)
+library(gam)
+library(gbm)
+library(tree)
+library(glmnet)
+library(plyr)
+library(corrplot)
+library(lattice)
+library(xgboost)
+```
+
+
+
+# Datasets
+
+```{r, message=FALSE, warning=FALSE}
+spamTrain <- read.csv("spamTrain.csv")
+spamValidate <- read.csv("spamValidate.csv")
+spamTest <- read.csv("spamTest.csv")
+#str(spamTrain)
+#table(spamValidate$type)
+# str(spamValidate)
+# str(spamTest)
+spamMerge=rbind(spamTrain,spamValidate)
+```
+
+There are **three** datasets provided.
+The training dataset contains 500 observations and 58 variables. Variable `type` is the categorical response variable and the rest of them are numerical predictor variables. `type` has two levels `spam` and `nonspam`
+Similarly the Validation dataset contains 500 observations and 58 variables.
+
+The test dataset has 2000 observations and 57 predictor variables. The categorical response variable `type` is missing from this test dataset and the task is to predict the response variable using the autograder.   
+In the train dataset, `nonspam:spam = 294:206` for `type`   
+In the validation dataset, `nonspam:spam = 284:216` for `type`.    
+
+
+# Data Visualization  
+
+```{r, message=FALSE, warning=FALSE,cache=TRUE, fig.height=18, fig.width=18}
+#str(spamTrain)
+#table(spamValidate$type)
+# str(spamValidate)
+# str(spamTest)
+#corrplot(cor(spamMerge[,1:56]), type="lower", method="number")
+featurePlot(x = spamTrain[ ,1:56], y = spamTrain$type, plot = "density",
+            scales = list(x = list(relation = "free"), y = list(relation = "free")),
+            adjust = 1.5, pch = "|", layout = c(3, 4),
+            auto.key = list(columns = 2))
+corrplot(cor(spamMerge[,1:56])>0.74, type="lower", method="circle")
+```
+
+From the feature plots, the variables; `you`, `your`, `hp`, `george`, `hp`, `charDollar`, `charExclamation`, and `edu` appears to be significant in the classification of the response variable.   
+
+
+Correlation plots were created to identify the interaction between different variables. The identified interactions `num650:num85, labs:num85 , num415:num857:direct ,capitalAve:capitalLong , telnet:num415:num857 , telnet:technology` are incorporated in the models.   
+
+
+# Tasks
+
+## Classification Accuracy
+
+The first task is to find a model that has the best possible classification accuracy.  
+
+```{r, message=FALSE, warning=FALSE}
+getACC <- function(actual, predicted) {
+  mean(actual == predicted)
+}
+```
+
+The "getACC" function calculates the Accuracy rate of the model predictions.  
+
+
+### Additive Logistic Regression
+
+```{r, message=FALSE, warning=FALSE,cache=TRUE}
+set.seed(2016)
+cvControl <- trainControl(method = "cv", number = 5, verbose = FALSE)
+glmFit <- train(type ~ . , 
+                data = spamTrain, method = "glm", 
+                family = "binomial", trControl = cvControl)
+CVglm <- glmFit$results$Accuracy
+glmTrainPred <- predict(glmFit, spamTrain)
+glmTrainAcc <-  getACC(spamTrain$type,glmTrainPred)
+glmValPred <- predict(glmFit, spamValidate)
+glmValAcc <-  getACC(spamValidate$type,glmValPred)
+glmTestPred <- predict(glmFit, spamTest)
+#gen_agfile(glmTestPred, file.name = "glmTestPred")
+```
+
+Simple Additive logistic regression model is fit to the training data using cross-validation, using also all identified two-way and three-way interactions while exploring the data sets.   
+
+The train accuracy is `r glmTrainAcc `     
+The validation accuracy is `r glmValAcc`    
+The CV accuracy is `r glmFit$results$Accuracy`      
+The Test accuracy is `0.806`  
+
+
+
+### SVM with Linear Kernel
+
+```{r, message=FALSE, warning=FALSE,cache=TRUE}
+set.seed(2016)
+linGrid <-  expand.grid(C = seq(0.02, 0.07,0.0005))   
+svmControl <- trainControl(method = "cv", number = 5, verbose = FALSE)
+linSvmFit <- train(type ~ . + num650:num85 + labs:num85 + num415:num857:direct +
+                capitalAve:capitalLong + telnet:num415:num857 + telnet:technology
+                , data = spamTrain,
+                method = "svmLinear",
+                trControl = svmControl,
+                verbose = FALSE,
+                tuneGrid = linGrid)
+CVlinSvm <- max(linSvmFit$results$Accuracy)
+linSvmTrainPred <- predict(linSvmFit, spamTrain)
+linSvmTrainAcc <-  getACC(spamTrain$type,linSvmTrainPred)
+linSvmValPred <- predict(linSvmFit, spamValidate)
+linSvmValAcc <-  getACC( spamValidate$type,linSvmValPred)
+#(c(linSvmTrainAcc,linSvmValAcc))
+linSvmTestPred <- predict(linSvmFit, spamTest)
+#gen_agfile(linSvmTestPred, file.name = "linSvmTestPred")
+```
+
+SVM with linear kernel is fit to the training data using using 5-fold cross-validation and tuning grid for C. All identified two-way and three-way interactions while exploring the data set are included in the model.  
+Initially, the grid assigned for `C` is `c(2 ^ (-10:10))` but later on condensed to `seq(0.02, 0.07,0.0005)` so as to identify best possible value which is closer to `0.0625` identified using the former grid.  
+
+The best tuned model resulted through cross validation has the following characteristics:     
+C = `r linSvmFit$bestTune`  
+
+The train accuracy is `r linSvmTrainAcc`     
+The validation accuracy is `r linSvmValAcc`  
+The CV accuracy is `r max(linSvmFit$results$Accuracy)`      
+The Test accuracy is ` 0.9105`
+
+
+
+### SVM with Radial Kernel
+
+```{r, message=FALSE, warning=FALSE,cache=TRUE}
+set.seed(2016)
+radGrid <-  expand.grid(C = c(2 ), sigma  = c(0.0078125))
+radSvmFit <- train(type ~ . + num650:num85 + labs:num85 + num415:num857:direct +
+                capitalAve:capitalLong + telnet:num415:num857 + telnet:technology
+                , data = spamTrain, 
+                method = "svmRadial",
+                trControl = svmControl, tuneGrid = radGrid)
+CVradSvm <- max(radSvmFit$results$Accuracy)
+radSvmTrainPred <- predict(radSvmFit, spamTrain)
+radSvmTrainAcc <-  getACC(spamTrain$type,radSvmTrainPred)
+radSvmValPred <- predict(radSvmFit, spamValidate)
+radSvmValAcc <-  getACC(spamValidate$type,radSvmValPred)
+radSvmTestPred <- predict(radSvmFit, spamTest)
+#gen_agfile(radSvmTestPred, file.name = "radSvmTestPred")
+```
+
+
+SVM with radial kernel is fit to the training data using using 5-fold cross-validation and tuning grid for C and sigma. All identified two-way and three-way interactions while exploring the data set are included in the model.  
+Initially, the grid assigned for `C` is `c(2 ^ (10:10))` but later on condensed to `c(2 ^ (1:3))` so as to identify best possible value which is closer to `0.0625` identified using the former grid.  
+Initially, the grid assigned for `sigma` is `c(2 ^ (-5:5)))` but later on changed to `c(2 ^ (-10:1)))` so as to identify best possible value which is closer to `0.0625` identified using the first grid. 
+
+The best tuned model resulted through cross validation has the following characteristics:     
+C = `r radSvmFit$bestTune$C`  and sigma = `r radSvmFit$bestTune$sigma`  
+
+The train accuracy is `r radSvmTrainAcc`     
+The validation accuracy is `r radSvmValAcc`  
+The CV accuracy is `r max(radSvmFit$results$Accuracy)`   
+The Test accuracy is `0.9055`
+
+
+
+### Stochastic Gradient Boosting
+
+
+```{r, message=FALSE, warning=FALSE,cache=TRUE,fig.height=12, fig.width=10}
+#TEST=94.75 #813
+set.seed(2016)
+gbmGrid <-  expand.grid(interaction.depth = c(2),
+                        n.trees = c(1000),
+                        shrinkage = c(0.016),
+                        n.minobsinnode = c(24))
+fitControl <- trainControl(method = "cv", number = 10, classProbs = TRUE, verbose = FALSE) 
+# gbmFit <- train(type ~ .^2 , 
+#                 data = spamTrain, 
+#                 method = "gbm",
+#                 trControl = fitControl,
+#                 verbose = FALSE,
+#                 tuneGrid = gbmGrid)
+gbmFit <- train(type ~ . + your:charSemicolon + capitalAve:capitalLong + font:charSemicolon , 
+                data = spamTrain, 
+                method = "gbm",
+                trControl = fitControl,
+                verbose = FALSE,
+                tuneGrid = gbmGrid)
+CVgbm <- max(gbmFit$results$Accuracy)
+summary(gbmFit)
+gbmTrainPred <- predict(gbmFit, spamTrain)
+gbmTrainAcc <-  getACC(spamTrain$type,gbmTrainPred)
+gbmValPred <- predict(gbmFit, spamValidate)
+gbmValAcc <-  getACC(spamValidate$type,gbmValPred)
+#c(gbmTrainAcc,gbmValAcc)
+gbmTestPred <- predict(gbmFit, spamTest)
+#gen_agfile(gbmTestPred, file.name = "gbmTestPred")
+
+```
+
+Gradient Boosting model is fitted to the training data with all the variables and their two-way interactions, which by default will produce a nice variable importance plot as well as plots of the marginal effects of the predictors. This model is based on weak learners. This method reduces error mainly by reducing bias. Interactions, which were influential in this model were retained along with all predictor variables. 
+The influential interactions identified from the`summary plot` in the initial GBM model were then selected and used in the final model. 
+  
+Tuning parameters for boosting:  
+Initially, the numer of trees which are chosen to be 500, 1000, 1500 and 2000.  But, the besttune model had 1000 trees. Hence, the chosen values are modified to 1000, 1100 and 1500 to get more accuracy.  
+The shrinkage parameter values are chosen from  0.001, 0.01, 0.05, 0.1. Other values in between this values were also checked to see if they fit well for the model. But, the 0.01 was chosen by the model. SO, the grid was modified to  seq(0.01,0.02,0.001) to choose more accurate value. This value controls the rate at which boosting learns. 
+The minimum observations in one node (minobsinnode) values are chosen from  seq(15,24,3). This value limits the minimum number of observations in a single node.  
+The interaction depth is chosen to be 1 and 2.  
+
+Besttune parameters:  
+`r gbmFit$bestTune` (number of trees, Interaction depth, shrinkage, n. minobsinnode)   
+
+The training accuracy for the model is `r gbmTrainAcc`   
+The Validation accuracy for the model is `r gbmValAcc`   
+The cross validated accuracy for the model is `r max(gbmFit$results$Accuracy)`    
+The testing accuracy for the model is `0.9240`. 
+
+
+### Extreme Gradient Boosting
+
+
+```{r, message=FALSE, warning=FALSE,cache=TRUE}
+set.seed(2016)  
+xgbGrid <-  expand.grid(nrounds=c(950), max_depth=c(8), eta=c(0.025)
+                        ,gamma= c(1.5),colsample_bytree=c(0.3),
+                        min_child_weight=c(1) )
+cvControl <- trainControl(method = "cv", number = 5, verbose = FALSE)
+xgbFit <- train(type ~. + num650:num85 + labs:num85 + num415:num857 + 
+                telnet:num415:num857, data = spamTrain,
+                method = "xgbTree",
+                trControl = cvControl,
+                verbose = FALSE,
+                objective= "binary:logistic",
+                eval_metric= "mlogloss",
+                tuneGrid = xgbGrid)
+CVxgb <- xgbFit$results$Accuracy
+xgbTrainPred <- predict(xgbFit,spamMerge)
+xgbTrainACC <- getACC(xgbTrainPred,spamMerge$type)
+xgbValPred <- predict(xgbFit,spamValidate)
+xgbValAcc <- getACC(xgbValPred,spamValidate$type)
+
+## BEST XGB MODEL ON MERGED DATASET, TO GET BETTER ACCURACY
+set.seed(2016)
+xgbFit1 <- train(type ~. + num650:num85 + labs:num85 + num415:num857 + 
+                telnet:num415:num857, data = spamMerge,
+                method = "xgbTree",
+                trControl = cvControl,
+                verbose = FALSE,
+                objective= "binary:logistic",
+                eval_metric= "mlogloss",
+                tuneGrid = xgbGrid)
+CVxgb1 <- xgbFit1$results$Accuracy
+xgbTrainPred1 = predict(xgbFit1,spamMerge)
+xgbTrainACC1 = getACC(xgbTrainPred1,spamMerge$type)
+xgbValPred1 = predict(xgbFit1,spamValidate)
+xgbValAcc1 = getACC(xgbValPred1,spamValidate$type)
+xgbTestPred = predict(xgbFit1,spamTest)
+#gen_agfile(xgbTestPred, file.name = "xgbTestPred") 
+```
+
+Extreme Boosting model is fitted to the training data with all the variables. Extreme boosting is variant of boosting,which uses more regularized model formalization to control over-fitting, which gives it better performance.There are several tuning parameters for Extreme boosting.  
+
+Parameter "eta" is shrinkage parameter for predcitors and it can take values from [0,1].  
+Parameter "Gamma" is for partition on a leaf node in the tree to resuce the loss,it can take values from [0,infinity].   
+
+Parameter "max-depth" is for deciding the maximum depth a tree can have, which in turns effects number of leafs in the tree.Parameter "min-child-weight" is for when to stop further partitioning at the child node, and it can take values[0,infinity].   
+
+Parameter 'colsample_bytree' is for to select column subsample ratio when constructing a tree, which affects the number of variables to include in the tree and it can take values from (0,1].  
+Paramter 'nrounds' is for how many rounds of boosting.    
+
+And the best tuning for the Extreme boosting model is with        
+
+`nrounds` =`r xgbFit$bestTune[1]`    
+`max_depth`=`r xgbFit$bestTune[2]`  
+`eta`=`r xgbFit$bestTune[3]`  
+`gamma`=`r xgbFit$bestTune[4]`  
+`colsample_bytree`=`r xgbFit$bestTune[5]`   
+`min_child_wieght`=`r xgbFit$bestTune[6]`       
+
+
+The training accuracy for the model is `r xgbTrainACC`     
+The Validation accuracy for the model is `r xgbValAcc`     
+The cross validated accuracy for the model is `r max(xgbFit$results$Accuracy)`      
+The testing accuracy for the model is `0.928`.  
+
+After looking at improved CV Accuracy in this model, the train and validation datasets are merged together to `spamMerge` so as to build more generalized model on larger dataset and submitted to the autograder.   
+
+The training accuracy for the model is `r xgbTrainACC1`     
+The Validation accuracy for the model is `r xgbValAcc1`     
+The cross validated accuracy for the model is `r max(xgbFit1$results$Accuracy)`      
+This model resulted in best test Accuracy of `0.9575` when submitted to the autograder.    
+
+
+
+###  Additive logistic regression with elastic net  
+
+```{r, message=FALSE, warning=FALSE,cache=TRUE}
+set.seed(2016)
+cv5 <- trainControl(method = "cv", number = 5)
+elNetGrid <- expand.grid(alpha = seq(0, 1, by = 0.01), lambda = seq(0, 100, by = 10))
+glmnetFit <- train(
+  type ~ .,
+  data = spamTrain,
+  trControl = cv5,
+  method = "glmnet",
+  tuneGrid = elNetGrid)
+CVglmnet <- max(glmnetFit$results$Accuracy)
+plot(glmnetFit)
+glmnetTrainPred <- predict(glmnetFit, spamTrain)
+glmnetTrainAcc <-  getACC(spamTrain$type,glmnetTrainPred)
+glmnetValPred <- predict(glmnetFit, spamValidate)
+glmnetValAcc <-  getACC(spamValidate$type,glmnetValPred)
+#c(glmnetTrainAcc,glmnetValAcc)
+glmnetTestPred=predict(glmnetFit,spamTest)
+#gen_agfile(glmnetTestPred, file.name = "glmnetTestPred")
+
+```
+
+
+Additive logistic regression model is fitted using the elastic-net penalty approach using cross-validation. This model is a mixture of both ridge and lasso regression. This method can perform variable selection and does regularization (shrinkage) of variables.  
+  
+Tuning Parameters:     
+The tuning parameter Lambda serves to control the relative impact of these two terms on the regression coeffcient estimates. CV is used to select good value for Lambda. Initially, Lambda values are checked for c(0.001,0.01,0.1,10,100,1000). The chosen value was 10. Hence, Lambda values were selected more precisely through CV using the 11 values in between 0 to 100 with increments of 10. (0,10,20.....,100).   
+
+Alpha = 1 represents lasso regression, Alpha close to 0 approaches ridge regression. Alpha is selected through CV using the values in between 0 and 1 with increments of 0.01 (0,0.01,0.02....1).   
+  
+The final values used for the model were alpha = 0.13 and lambda = 0.    
+The training accuracy for the model is `r glmnetTrainAcc`.  
+The Validation accuracy for the model is `r glmnetValAcc`.
+The cross validated accuracy for the model is `r max(glmnetFit$results$Accuracy)`.      
+The testing accuracy for the model is `0.8835`.   
+  
+  
+###  Results for Classification Task  
+
+
+
+| Model          | TrainAcc           | ValAcc           | CVAcc         | TestAcc |
+|----------------|--------------------|------------------|---------------|---------|
+| GLM            | `r glmTrainAcc`    | `r glmValAcc`    | `r CVglm`     | 0.806   |
+| LinearSVM      | `r linSvmTrainAcc` | `r linSvmValAcc` | `r CVlinSvm ` | 0.9105  |
+| RadialSVM      | `r radSvmTrainAcc` | `r radSvmValAcc` | `r CVradSvm ` | 0.9055  |
+| GBM            | `r gbmTrainAcc`    | `r gbmValAcc`    | `r CVgbm `    | 0.9240  |
+| XGBoost        | `r xgbTrainACC`    | `r xgbValAcc`    | `r CVxgb`     | 0.928   |
+| XGBoost-Merged | `r xgbTrainACC1`   |          NA      | `r CVxgb1`    | 0.9575  |
+| GLM-ElasticNet | `r glmnetTrainAcc` | `r glmnetValAcc` | `r CVglmnet`  | 0.8835  |
+
+
+
+
+
+
+
+Extreme Gradient Boosting and GBM models result in best models with best training, validation and test accuracies. None of the Linear models including GLM, Linear SVM and GLM with elastic net resulted in good results. This indicates that the data is not-linearly separable.
+Extreme Gradient Boosting model built on Merged dataset of the train and validation datasets results in best train, CV and  Test Accuracies.  
+
+
+
+
+
+
+\
+\
+\
+
+
+
+  
+  
+  
+
+
+## Spam Filter
+
+```{r, message=FALSE, warning=FALSE}
+getScore <- function(predicted, actual) {
+   1 * sum(predicted == "spam" & actual == "spam") +
+ -20 * sum(predicted == "spam" & actual == "nonspam") +
+  -1 * sum(predicted == "nonspam" & actual == "spam") +
+   1 * sum(predicted == "nonspam" & actual == "nonspam")
+}
+```
+
+This function calculates the score. Positive weights are assigned to correct decisions. Negative weights are assigned to incorrect decisions. (Marking `nonspam` email as `spam` being penalized much harder.) Higher scores are better.
+
+
+```{r, message=FALSE, warning=FALSE,fig.height=18, fig.width=18}
+bestcutoff <-function(valprob) {
+cutoff <- seq(0.1,0.99, 0.001)
+ValScore <- rep(0,length(cutoff))
+for(i in 1:length(cutoff)) {
+  predFilterVal <- ifelse(valprob > cutoff[i], "spam", "nonspam")
+  ValScore[i] <- getScore(predFilterVal, spamValidate$type)
+}
+plot(cutoff,ValScore,type="l",col="green",xlab="Cutoff values",ylab="Spam filter scores",xlim=c(0.1, 0.99), ylim=c(-1000, 600))
+legend(0.6,-300,c("ValScore"),lty=c(1,1,1), 
+col=c("green"))
+cat("Best cut off is :",cutoff[which.max(ValScore)])
+return (cutoff[which.max(ValScore)])
+} 
+
+
+bestcutoff1 <-function(trprob,valprob) {
+cutoff <- seq(0.1,0.99, 0.001)
+TrScore <- rep(0,length(cutoff))
+ValScore <- rep(0,length(cutoff))
+scoreDiff <- rep(0,length(cutoff))
+for(i in 1:length(cutoff)) {
+  predFilterTr <- ifelse(trprob > cutoff[i], "spam", "nonspam")
+  TrScore[i] <- getScore(predFilterTr, spamTrain$type)
+  predFilterVal <- ifelse(valprob > cutoff[i], "spam", "nonspam")
+  ValScore[i] <- getScore(predFilterVal, spamValidate$type)
+  scoreDiff[i] <- abs(TrScore[i]-ValScore[i])
+}
+plot(cutoff,TrScore,type="l",col="red",xlab="Cutoff values",ylab="Spam filter scores",xlim=c(0.1, 0.99), ylim=c(-1000, 600))
+lines(cutoff,ValScore,col="green")
+lines(cutoff,scoreDiff,col="blue")
+legend(0.6,-300,c("TrainScore","ValScore","ScoreDiff"),lty=c(1,1,1), 
+col=c("red","green","blue"))
+cat("Best cut off is :",cutoff[which.min(scoreDiff)])
+return (cutoff[which.min(scoreDiff)])
+} 
+
+```
+
+The `bestcutoff` function was used to determine the best cutoff which maximizes the validation score.
+
+
+The `bestcutoff1` function was used to determine the best cutoff which can minimize the absolute score differences between the train and validation datasets for the extreme GBM model built using merged dataset. This indirectly represents selecting the cutoff at which the model perfomes well on both the train and validation datasets. The absolute value of the score difference is adopted in choosing the best cut-off value.   
+
+
+### Additive logistic regression with an unaltered cutoff
+
+```{r, message=FALSE, warning=FALSE}
+guva=getScore(glmValPred, spamValidate$type)
+glmTestPred <- predict(glmFit, spamTest)
+#gen_agfile(glmTestPred, file.name = "glmTestPredFilter")
+```
+
+
+### The additive logistic regression with an altered cutoff
+
+```{r, message=FALSE, warning=FALSE} 
+glmProbVal <- predict(glmFit, spamValidate, type = "prob")
+glmProbValSpam <- glmProbVal$spam
+glmProbTest <- predict(glmFit, spamTest, type = "prob")
+glmProbTestSpam <- glmProbTest$spam
+
+BCG=bestcutoff(glmProbValSpam)
+
+glmFilterVal <- ifelse(glmProbValSpam > BCG, "spam", "nonspam")
+#table(predicted = glmFilterVal, actual = spamValidate$type)
+gava=getScore(glmFilterVal, spamValidate$type)
+
+predFilterTest1 <- ifelse(glmProbTestSpam > BCG, "spam", "nonspam")
+#gen_agfile(predFilterTest1, file.name = "predFilter1")
+
+```
+
+Different probability cutoffs to alter the sensitivity and specificity of a method in order to obtain a better score.
+
+
+
+### Extreme Gradient Boosting with an unaltered cutoff
+
+```{r}
+xgbValPred <- predict(xgbFit,spamValidate)
+xuva=getScore(xgbValPred, spamValidate$type)
+xgbTestPred <- predict(xgbFit,spamTest)
+#gen_agfile(xgbTestPred, file.name = "xgbFilter") 
+
+```
+
+
+### Extreme Gradient Boosting with an altered cutoff
+```{r}
+set.seed(2016)
+xgbProbVal <- predict(xgbFit, spamValidate, type = "prob")
+xgbProbValSpam <- xgbProbVal$spam
+
+BC=bestcutoff(xgbProbValSpam) 
+
+xgbFilterVal <- ifelse(xgbProbValSpam > BC, "spam", "nonspam")
+#table(predicted = xgbFilterVal, actual = spamValidate$type)
+xava=getScore(xgbFilterVal, spamValidate$type)
+
+xgbProbTest <- predict(xgbFit, spamTest, type = "prob")
+xgbProbTestSpam <- xgbProbTest$spam
+xgbFilterTest <- ifelse(xgbProbTestSpam > BC, "spam", "nonspam")
+#gen_agfile(xgbFilterTest, file.name = "xgbFilter")
+
+```
+
+### Extreme Gradient Boosting-Merged data with an altered cutoff
+```{r}
+set.seed(2016)
+xgbProbTrain1 <- predict(xgbFit1, spamTrain, type = "prob")
+xgbProbTrainSpam1 <- xgbProbTrain1$spam
+xgbProbVal1 <- predict(xgbFit1, spamValidate, type = "prob")
+xgbProbValSpam1 <- xgbProbVal1$spam
+
+BC1=bestcutoff1(xgbProbTrainSpam1, xgbProbValSpam1) 
+
+xgbFilterVal1 <- ifelse(xgbProbValSpam1 > BC1, "spam", "nonspam")
+xava1=getScore(xgbFilterVal1, spamValidate$type)
+
+xgbProbTest1 <- predict(xgbFit1, spamTest, type = "prob")
+xgbProbTestSpam1 <- xgbProbTest1$spam
+xgbFilterTest1 <- ifelse(xgbProbTestSpam1 > BC1, "spam", "nonspam")
+#gen_agfile(xgbFilterTest1, file.name = "xgbFilter1")
+```
+
+
+### Extreme Gradient Boosting-Merged data with an unaltered cutoff
+```{r}
+xgbValPred2 <- predict(xgbFit1,spamValidate)
+xuva1=getScore(xgbValPred, spamValidate$type)
+xgbTestPred2 <- predict(xgbFit1,spamTest)
+#gen_agfile(xgbTestPred2, file.name = "xgbFilter2") 
+
+```
+
+
+### Results for Filter Task
+
+
+| Model                                | Cutoff  | Validation Score | Test Score |
+|--------------------------------------|---------|------------------|------------|
+| GLM-Unaltered cutoff                 | Default | `r guva`         | -719       |
+| GLM-Altered cutoff                   | `r BCG` | `r gava`         | 410        |
+| XGBoost Unaltered cutoff             | Default | `r xuva`         | 785        |
+| XGBoost Altered cutoff               | `r BC`  | `r xava`         | 1273       |
+
+
+The extreme gradient boosting model was the best model in the classification task. The cutoff value was chosen by using the model on the validation dataset. The cutoff at which the validatation score was maximum was the chosen cutoff.   
+The extreme gradient boosting model achieves less validation and test scores. While looking at the test scores for all the models, the linear model resulted in bad validation and test scores whereas the extreme GBM with an altered cutoff resulted in good validation and test scores.   
+
+
+
+
+
+| Model                                | Cutoff  | Validation Score | Test Score |
+|--------------------------------------|---------|------------------|------------|
+| XGBoost-Merged data-Unaltered cutoff | Default |  `r xuva1`       | 1146       |
+| XGBoost-Merged data-Altered cutoff   | `r BC1` |  `r xava1`       | 1529       |
+
+
+The extreme gradient boosting model built using merged dataset was the best model in the classification task. But, the cutoff value was chosen by using the model on both the train and validation datasets. The cutoff value was chosen at which the absolute score difference between the train and validation datasets is smaller.
+This model with an altered cutoff resulted in a validation score (only on validation data) of 468 and test score of 1529.   
+
+\
+\
+\
