@@ -4,6 +4,8 @@ output: html_document
 ---
 
 
+
+
 ### Functional programming
 ##### With functional programming you can also consider the possibility that you can provide a function as an argument to another function,and a function can return another function as its result
 ##### There are groups of functions that are essential for functional programming.In most cases they take a function and a data structure as arguments, and that function is applied to that data structure in some way. The purrr library contains many of these functions and we'll be using it throughout this section.Function programming is concerned mostly with lists and vectors
